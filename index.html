@@ -1,0 +1,383 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>施工日誌填報</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@400;500;700&family=IBM+Plex+Mono:wght@500;600&display=swap">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<style>
+/* Layout: single mobile column, one card per diary section, sticky save bar at bottom */
+:root{
+  --bg:#eef1f3; --surface:#ffffff; --line:#d5dbe0; --fg:#1b2329; --muted:#5f6b75;
+  --accent:#1f5f8b; --accent-soft:#dbe8f2; --hi:#e8a317; --hi-soft:#fdf1d8;
+  --ok:#2f7d4f; --warn:#b4471f; --warn-soft:#fbe5dc;
+  --f-body:"Noto Sans TC","PingFang TC","Microsoft JhengHei",system-ui,sans-serif;
+  --f-num:"IBM Plex Mono",ui-monospace,Menlo,monospace;
+  --r:10px;
+}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]){
+  --bg:#12171b; --surface:#1b2227; --line:#2e3840; --fg:#e4e9ed; --muted:#93a1ac;
+  --accent:#6aa9d6; --accent-soft:#1d3344; --hi:#f0b440; --hi-soft:#3a2f17;
+  --ok:#5fbf86; --warn:#ef8a62; --warn-soft:#3d241a; color-scheme:dark}}
+:root[data-theme="dark"]{
+  --bg:#12171b; --surface:#1b2227; --line:#2e3840; --fg:#e4e9ed; --muted:#93a1ac;
+  --accent:#6aa9d6; --accent-soft:#1d3344; --hi:#f0b440; --hi-soft:#3a2f17;
+  --ok:#5fbf86; --warn:#ef8a62; --warn-soft:#3d241a; color-scheme:dark}
+*{box-sizing:border-box}
+html{padding-top:env(safe-area-inset-top,0px)}
+body{margin:0}
+[hidden]{display:none!important}
+body{background:var(--bg);color:var(--fg);font-family:var(--f-body);font-size:15px;line-height:1.5}
+.wrap{max-width:640px;margin:0 auto;padding-inline:16px;padding-block:14px 110px;display:flex;flex-direction:column;gap:14px}
+.num{font-family:var(--f-num);font-variant-numeric:tabular-nums}
+header{display:flex;flex-direction:column;gap:8px}
+.org{font-size:12px;letter-spacing:.06em;color:var(--muted)}
+h1{font-size:19px;line-height:1.35;margin:0;text-wrap:balance}
+.meta{display:flex;flex-wrap:wrap;gap:8px 14px;font-size:13px;color:var(--muted);align-items:center}
+.meta b{color:var(--fg);font-weight:600}
+.date-row{display:flex;gap:10px;align-items:center;flex-wrap:wrap}
+input[type=date]{font:inherit;font-size:16px;padding:8px 10px;border:1px solid var(--line);border-radius:8px;background:var(--surface);color:var(--fg)}
+.daychip{background:var(--accent-soft);color:var(--accent);padding:4px 10px;border-radius:99px;font-size:13px;font-weight:600}
+.prog{display:grid;grid-template-columns:auto 1fr auto;gap:4px 10px;align-items:center;font-size:12px;color:var(--muted)}
+.bar{height:6px;background:var(--line);border-radius:3px;overflow:hidden;position:relative}
+.bar i{position:absolute;inset:0 auto 0 0;background:var(--accent);border-radius:3px}
+.bar.plan i{background:var(--muted)}
+section.card{background:var(--surface);border:1px solid var(--line);border-radius:var(--r);padding:14px;display:flex;flex-direction:column;gap:12px}
+h2{font-size:15px;margin:0;display:flex;justify-content:space-between;align-items:baseline;gap:8px}
+h2 small{font-weight:400;color:var(--muted);font-size:12px}
+.wx-row{display:grid;grid-template-columns:44px 1fr;gap:10px;align-items:center}
+.wx-row>span{font-weight:600;font-size:14px}
+.seg{display:grid;grid-template-columns:repeat(4,1fr);gap:6px}
+.seg button{font:inherit;font-size:14px;padding:9px 0;border:1px solid var(--line);background:var(--surface);color:var(--fg);border-radius:8px;cursor:pointer}
+.seg button[aria-pressed=true]{background:var(--accent);border-color:var(--accent);color:var(--surface);font-weight:600}
+.workers{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+@media (max-width:440px){.workers{grid-template-columns:1fr}}
+.w{display:flex;align-items:center;justify-content:space-between;border:1px solid var(--line);border-radius:8px;padding:6px 6px 6px 10px;gap:6px}
+.w label{font-size:14px}
+.step{display:flex;align-items:center;gap:2px}
+.step button{width:34px;height:34px;border:none;background:var(--bg);color:var(--fg);border-radius:6px;font-size:18px;cursor:pointer;line-height:1}
+.step input{width:40px;text-align:center;border:none;background:transparent;color:var(--fg);font-family:var(--f-num);font-size:16px;font-weight:600}
+.w.has{border-color:var(--accent);background:var(--accent-soft)}
+.groups{display:flex;flex-direction:column;gap:8px}
+.g{border:1px solid var(--line);border-radius:8px;overflow:hidden}
+.g>button{width:100%;display:grid;grid-template-columns:1fr auto 18px;gap:10px;align-items:center;padding:12px;border:none;background:var(--surface);color:var(--fg);font:inherit;text-align:left;cursor:pointer}
+.g>button .gt{display:flex;flex-direction:column;gap:4px;min-width:0}
+.g>button .gt b{font-size:15px}
+.g>button .gt small{color:var(--muted);font-size:12px}
+.g>button .pct{font-size:13px;color:var(--muted)}
+.chev{transition:transform .15s;color:var(--muted)}
+.g.open .chev{transform:rotate(90deg)}
+.badge{display:inline-block;background:var(--hi-soft);color:var(--fg);border:1px solid var(--hi);font-size:11px;padding:0 6px;border-radius:99px;margin-left:6px;vertical-align:1px}
+.items{display:none;border-top:1px solid var(--line);background:var(--bg)}
+.g.open .items{display:flex;flex-direction:column}
+.it{padding:12px;border-bottom:1px solid var(--line);display:flex;flex-direction:column;gap:8px}
+.it:last-child{border-bottom:none}
+.it-h{display:flex;gap:8px;align-items:baseline}
+.it-h code{font-family:var(--f-num);font-size:11px;color:var(--muted);white-space:nowrap}
+.it-h span{font-size:14px;font-weight:500}
+.q{display:grid;grid-template-columns:repeat(3,1fr);gap:6px}
+.q div{display:flex;flex-direction:column;background:var(--surface);border:1px solid var(--line);border-radius:6px;padding:6px 8px;min-width:0}
+.q div em{font-style:normal;font-size:11px;color:var(--muted);letter-spacing:.04em}
+.q div b{font-family:var(--f-num);font-size:15px;font-weight:600}
+.q div.today{border-color:var(--hi);background:var(--hi-soft)}
+.q div.today input{width:100%;border:none;background:transparent;color:var(--fg);font-family:var(--f-num);font-size:16px;font-weight:600;padding:0}
+.q div.today input:focus{outline:none}
+.q div.today:focus-within{box-shadow:0 0 0 2px var(--hi)}
+.it .bar{height:5px}
+.it .bar i.add{background:var(--hi)}
+.it .bar i{background:var(--ok)}
+.it-f{display:flex;justify-content:space-between;font-size:12px;color:var(--muted)}
+.it.over .q div.today{border-color:var(--warn);background:var(--warn-soft)}
+.it .msg{color:var(--warn);font-weight:600}
+textarea{width:100%;min-height:80px;font:inherit;padding:10px;border:1px solid var(--line);border-radius:8px;background:var(--surface);color:var(--fg);resize:vertical}
+.savebar{position:fixed;left:0;right:0;bottom:0;background:var(--surface);border-top:1px solid var(--line);padding:10px 16px calc(10px + env(safe-area-inset-bottom,0px))}
+.savebar .in{max-width:640px;margin:0 auto;display:flex;gap:10px;align-items:center}
+.savebar .sum{flex:1;font-size:12px;color:var(--muted);line-height:1.4;min-width:0}
+.savebar .sum b{color:var(--fg)}
+@media (max-width:420px){.btn{padding:11px 12px;font-size:14px}}
+.btn{font:inherit;font-weight:700;font-size:15px;padding:11px 18px;border-radius:8px;border:none;background:var(--accent);color:var(--surface);cursor:pointer}
+.btn.ghost{background:transparent;color:var(--accent);border:1px solid var(--accent)}
+button:focus-visible,input:focus-visible,textarea:focus-visible{outline:2px solid var(--hi);outline-offset:2px}
+.toast{position:fixed;left:50%;bottom:90px;transform:translateX(-50%);background:var(--fg);color:var(--bg);padding:8px 16px;border-radius:99px;font-size:13px;opacity:0;transition:opacity .2s;pointer-events:none}
+.toast.on{opacity:1}
+.note{font-size:12px;color:var(--muted);background:var(--hi-soft);border:1px dashed var(--hi);padding:8px 10px;border-radius:8px}
+section.card.locked{opacity:.45}
+section.card.locked h2 small{display:none}
+.lockmsg{font-size:13px;color:var(--warn);font-weight:600}
+.seg.two{grid-template-columns:1fr 1fr}
+.seg.two button{padding:12px 0;font-size:15px}
+.seg.two button.no[aria-pressed=true]{background:var(--warn);border-color:var(--warn)}
+.reason{display:flex;flex-wrap:wrap;gap:6px;align-items:center;font-size:13px;color:var(--muted)}
+.reason button{font:inherit;font-size:13px;padding:5px 12px;border:1px solid var(--line);border-radius:99px;background:var(--surface);color:var(--fg);cursor:pointer}
+.reason button[aria-pressed=true]{border-color:var(--warn);background:var(--warn-soft);font-weight:600}
+pre.preview{white-space:pre-wrap;font-family:var(--f-num);font-size:12px;background:var(--bg);padding:10px;border-radius:8px;margin:0;overflow-x:auto}
+@media (prefers-reduced-motion:reduce){*{transition:none!important}}
+</style>
+</head>
+<body>
+<style>
+.topbar{display:flex;gap:8px;align-items:center;justify-content:space-between}
+.topbar select{font:inherit;font-size:14px;padding:6px 8px;border:1px solid var(--line);border-radius:8px;background:var(--surface);color:var(--fg);max-width:70%}
+.iconbtn{font:inherit;font-size:13px;padding:6px 10px;border:1px solid var(--line);border-radius:8px;background:var(--surface);color:var(--fg);cursor:pointer}
+.field{display:flex;flex-direction:column;gap:4px;font-size:13px;color:var(--muted)}
+.field input{font:inherit;font-size:16px;padding:9px 10px;border:1px solid var(--line);border-radius:8px;background:var(--surface);color:var(--fg)}
+.err{color:var(--warn);font-size:13px;font-weight:600}
+.status{font-size:12px;color:var(--muted)}
+.status.dirty{color:var(--warn);font-weight:600}
+</style>
+
+<div class="wrap">
+  <div class="topbar">
+    <select id="proj" aria-label="案場"></select>
+    <button class="iconbtn" id="openSet" type="button">連線設定</button>
+  </div>
+
+  <section class="card" id="setup" hidden aria-labelledby="h-set">
+    <h2 id="h-set">連線設定 <small>只存在這台裝置</small></h2>
+    <label class="field">GitHub 帳號<input id="cfOwner" autocomplete="off" value="alexanderliao1010"></label>
+    <label class="field">資料 repo 名稱<input id="cfRepo" autocomplete="off" value="site-diary-data"></label>
+    <label class="field">Token（github_pat_ 開頭）<input id="cfToken" type="password" autocomplete="off"></label>
+    <div class="err" id="setErr" hidden></div>
+    <button class="btn" id="cfSave" type="button">連線</button>
+  </section>
+
+  <div id="main" hidden>
+  <div style="display:flex;flex-direction:column;gap:14px">
+  <header>
+    <div class="org" id="pOrg"></div>
+    <h1 id="pName"></h1>
+    <div class="date-row">
+      <input type="date" id="d">
+      <span class="daychip" id="daychip">第 — 天</span>
+    </div>
+    <div class="meta" id="pMeta"></div>
+    <div class="prog">
+      <span>預定進度</span><div class="bar plan"><i id="pbar"></i></div><span class="num" id="ptxt"></span>
+      <span>實際進度</span><div class="bar"><i id="abar"></i></div><span class="num" id="atxt"></span>
+    </div>
+    <div class="status" id="status"></div>
+  </header>
+
+  <section class="card" aria-labelledby="h-work">
+    <h2 id="h-work">本日是否施工</h2>
+    <div class="seg two" id="work">
+      <button type="button" data-v="1">有</button>
+      <button type="button" data-v="0" class="no">沒有</button>
+    </div>
+    <div class="reason" id="reason" hidden>原因：</div>
+  </section>
+
+  <section class="card" aria-labelledby="h-wx">
+    <h2 id="h-wx">本日天氣</h2>
+    <div class="wx-row"><span>上午</span><div class="seg" data-k="am"></div></div>
+    <div class="wx-row"><span>下午</span><div class="seg" data-k="pm"></div></div>
+  </section>
+
+  <section class="card" aria-labelledby="h-wk" id="sec-wk">
+    <h2 id="h-wk">出工人數 <small>本日合計 <b class="num" id="wtotal">0</b> 人</small></h2>
+    <div class="lockmsg" hidden>本日無施工，免填出工人數</div>
+    <div class="workers" id="workers"></div>
+  </section>
+
+  <section class="card" aria-labelledby="h-it" id="sec-it">
+    <h2 id="h-it">施工項目 <small>點大工項展開細項</small></h2>
+    <div class="lockmsg" hidden>本日無施工，免填施工數量</div>
+    <div class="groups" id="groups"></div>
+  </section>
+
+  <section class="card" aria-labelledby="h-nt">
+    <h2 id="h-nt">重要事項紀錄</h2>
+    <textarea id="notes" placeholder="例：監造單位到場抽查隔間骨架間距，符合圖說"></textarea>
+  </section>
+
+  <section class="card" aria-labelledby="h-pv">
+    <h2 id="h-pv">日誌預覽</h2>
+    <pre class="preview" id="preview"></pre>
+  </section>
+  </div>
+  </div>
+</div>
+
+<div class="savebar" id="savebar" hidden><div class="in">
+  <div class="sum" id="sum"></div>
+  <button class="btn ghost" id="xls" type="button">匯出 Excel</button>
+  <button class="btn" id="save" type="button">儲存</button>
+</div></div>
+<div class="toast" id="toast" role="status"></div>
+
+<script>
+const WEATHER=['晴','陰','雨','颱風'];
+const REASONS=['例假日','國定假日','氣候','其他因素'];
+const $=s=>document.querySelector(s);
+const fmt=n=>{const r=Math.round(n*1000)/1000;return r.toLocaleString('zh-TW',{maximumFractionDigits:3})};
+const roc=d=>{const[y,m,dd]=d.split('-');return `${y-1911}.${m}.${dd}`};
+const addDays=(d,n)=>new Date(new Date(d+'T00:00:00Z').getTime()+n*864e5).toISOString().slice(0,10);
+const dayNo=d=>Math.round((new Date(d+'T00:00:00Z')-new Date(P.project.start+'T00:00:00Z'))/864e5)+1;
+function todayStr(){const t=new Date();t.setMinutes(t.getMinutes()-t.getTimezoneOffset());return t.toISOString().slice(0,10)}
+function toast(m){const t=$('#toast');t.textContent=m;t.classList.add('on');clearTimeout(toast.h);toast.h=setTimeout(()=>t.classList.remove('on'),2400)}
+const ls={get(k){try{return localStorage.getItem(k)}catch(e){return null}},set(k,v){try{localStorage.setItem(k,v)}catch(e){}}};
+
+/* ---------- GitHub ---------- */
+let CFG=null;try{CFG=JSON.parse(ls.get('sd:cfg')||'null')}catch(e){}
+const b64enc=str=>{const u=new TextEncoder().encode(str);let s='';for(let i=0;i<u.length;i+=0x8000)s+=String.fromCharCode.apply(null,u.subarray(i,i+0x8000));return btoa(s)};
+const b64dec=b=>new TextDecoder().decode(Uint8Array.from(atob(b.replace(/\n/g,'')),c=>c.charCodeAt(0)));
+async function gh(path,opt={}){
+ const r=await fetch(`https://api.github.com/repos/${CFG.owner}/${CFG.repo}/contents/${path}`,{...opt,cache:'no-store',headers:{'Accept':'application/vnd.github+json','Authorization':'Bearer '+CFG.token,...(opt.body?{'Content-Type':'application/json'}:{})}});
+ if(!r.ok){const e=new Error('HTTP '+r.status);e.status=r.status;throw e}
+ return r.json();
+}
+async function readFile(f){const j=await gh(encodeURIComponent(f)+'?t='+Date.now());return{data:JSON.parse(b64dec(j.content)),sha:j.sha}}
+async function writeFile(f,data,sha,msg){return gh(encodeURIComponent(f),{method:'PUT',body:JSON.stringify({message:msg,content:b64enc(JSON.stringify(data,null,1)),sha})})}
+const errText=e=>e.status===401?'Token 無效或已過期':e.status===404?'找不到資料 repo 或檔案，請檢查帳號、repo 名稱與 token 權限':e.status===403?'Token 沒有寫入權限（Contents 要設 Read and write）':'連線失敗，請檢查網路';
+
+/* ---------- state ---------- */
+let P=null,SHA=null,FILE=null,DIRTY=false;
+const S={date:'',work:true,reason:'例假日',am:'晴',pm:'晴',w:{},today:{},notes:'',open:{}};
+const items=()=>P.groups.flatMap(g=>g.items);
+const recQ=(rec,c)=>rec&&rec.work!==false?(+((rec.today||{})[c])||0):0;
+function priorDone(it,date){let v=it.baseDone;for(const d in P.records){if(d>P.project.baseDate&&d<date)v+=recQ(P.records[d],it.code)}return +v.toFixed(3)}
+const todayQ=c=>S.work?(+S.today[c]||0):0;
+function snap(){return{work:S.work,reason:S.reason,am:S.am,pm:S.pm,w:{...S.w},today:{...S.today},notes:S.notes,savedAt:new Date().toISOString()}}
+function loadDay(){const r=P.records[S.date];Object.assign(S,{work:true,reason:'例假日',am:'晴',pm:'晴',w:{},today:{},notes:''},r?JSON.parse(JSON.stringify(r)):{});if(r)S.work=r.work!==false;DIRTY=false}
+function markDirty(){DIRTY=true;status()}
+function status(){const r=P.records[S.date];const el=$('#status');el.classList.toggle('dirty',DIRTY);el.textContent=DIRTY?'尚未儲存':r?`已儲存 ${new Date(r.savedAt).toLocaleString('zh-TW',{hour12:false})}`:'這天還沒填報'}
+
+/* ---------- UI ---------- */
+function buildWeather(){document.querySelectorAll('.seg[data-k]').forEach(seg=>{const k=seg.dataset.k;seg.innerHTML='';WEATHER.forEach(w=>{const b=document.createElement('button');b.type='button';b.textContent=w;b.setAttribute('aria-pressed',S[k]===w);b.onclick=()=>{S[k]=w;markDirty();buildWeather();refresh(true)};seg.appendChild(b)})})}
+function buildWork(){$('#work').querySelectorAll('button').forEach(b=>{b.setAttribute('aria-pressed',(b.dataset.v==='1')===S.work);b.onclick=()=>{S.work=b.dataset.v==='1';markDirty();buildWork();refresh()}});
+ const r=$('#reason');r.hidden=S.work;r.innerHTML='原因：';REASONS.forEach(x=>{const b=document.createElement('button');b.type='button';b.textContent=x;b.setAttribute('aria-pressed',S.reason===x);b.onclick=()=>{S.reason=x;markDirty();buildWork();refresh(true)};r.appendChild(b)})}
+function buildWorkers(){const box=$('#workers');box.innerHTML='';P.workers.forEach((n,i)=>{const v=S.w[n]||0;const d=document.createElement('div');d.className='w'+(v?' has':'');d.innerHTML=`<label for="w${i}">${n}</label><div class="step"><button type="button" aria-label="${n}減一">−</button><input id="w${i}" inputmode="numeric" value="${v}"><button type="button" aria-label="${n}加一">+</button></div>`;const [m,p]=d.querySelectorAll('button');const inp=d.querySelector('input');const set=x=>{x=Math.max(0,parseInt(x)||0);if(x)S.w[n]=x;else delete S.w[n];inp.value=x;d.classList.toggle('has',x>0);markDirty();refresh(true)};m.onclick=()=>set((S.w[n]||0)-1);p.onclick=()=>set((S.w[n]||0)+1);inp.onchange=()=>set(inp.value);inp.onfocus=()=>inp.select();box.appendChild(d)})}
+function groupStats(g){let tot=0,done=0,cnt=0;g.items.forEach(it=>{const t=todayQ(it.code);tot+=it.qty*it.price;done+=(priorDone(it,S.date)+t)*it.price;if(t)cnt++});return{pct:tot?done/tot:0,cnt}}
+function hdr(el,g){const st=groupStats(g);const b=el.querySelector('.badge');b.hidden=!st.cnt;b.textContent=`今日 ${st.cnt} 項`;el.querySelector('.pct').textContent=(st.pct*100).toFixed(1)+'%'}
+function buildGroups(){const box=$('#groups');box.innerHTML='';P.groups.forEach(g=>{const el=document.createElement('div');el.className='g'+(S.open[g.id]?' open':'');
+ el.innerHTML=`<button type="button" aria-expanded="${!!S.open[g.id]}"><span class="gt"><b>${g.id}、${g.name}<span class="badge"></span></b><small>${g.items.length} 個細項</small></span><span class="pct num"></span><span class="chev">›</span></button><div class="items"></div>`;
+ el.querySelector('button').onclick=()=>{S.open[g.id]=!S.open[g.id];buildGroups()};
+ const box2=el.querySelector('.items');
+ g.items.forEach(itm=>{const {code:c,name:n,unit:u,qty:q}=itm;const dn=priorDone(itm,S.date);const t=S.today[c]??'';const it=document.createElement('div');it.className='it';
+  const id='q_'+c.replace(/\./g,'_');
+  it.innerHTML=`<div class="it-h"><code>${c}</code><span>${n}</span></div>
+  <div class="q"><div><em>總數量</em><b>${fmt(q)}</b></div><div><em>已完成</em><b>${fmt(dn)}</b></div><div class="today"><em><label for="${id}">今日 (${u})</label></em><input id="${id}" type="number" inputmode="decimal" step="any" min="0" placeholder="0" value="${t}"></div></div>
+  <div class="bar"><i style="width:${Math.min(100,dn/q*100)}%"></i><i class="add"></i></div>
+  <div class="it-f"><span class="after"></span><span>剩 <span class="num rem"></span> ${u}</span></div>`;
+  const inp=it.querySelector('input');
+  const upd=()=>{const v=parseFloat(inp.value)||0;if(v)S.today[c]=v;else delete S.today[c];const after=dn+v;const add=it.querySelector('i.add');add.style.left=Math.min(100,dn/q*100)+'%';add.style.width=Math.max(0,Math.min(100,after/q*100)-Math.min(100,dn/q*100))+'%';
+   it.classList.toggle('over',after>q+1e-9);it.querySelector('.after').innerHTML=after>q+1e-9?`<span class="msg">超過總數量 ${fmt(after-q)} ${u}</span>`:`完成後累計 <span class="num">${fmt(after)}</span>（${(after/q*100).toFixed(0)}%）`;it.querySelector('.rem').textContent=fmt(Math.max(0,q-after))};
+  inp.oninput=()=>{upd();markDirty();refresh(true);hdr(el,g)};upd();box2.appendChild(it)});
+ hdr(el,g);box.appendChild(el)})}
+function lockUI(){['#sec-wk','#sec-it'].forEach(q=>{const sec=$(q);sec.classList.toggle('locked',!S.work);sec.querySelector('.lockmsg').hidden=S.work;const body=sec.querySelector('.workers,.groups');if(S.work)body.removeAttribute('inert');else body.setAttribute('inert','')})}
+function refresh(skipGroups){
+ const pj=P.project;
+ const wt=S.work?P.workers.reduce((a,n)=>a+(S.w[n]||0),0):0;$('#wtotal').textContent=wt;
+ const lines=[];let amt=0,done=0;
+ items().forEach(it=>{const t=todayQ(it.code);const dn=priorDone(it,S.date);done+=(dn+t)*it.price;if(t){lines.push(`  ${it.code} ${it.name}  本日 ${fmt(t)} ${it.unit}，累計 ${fmt(dn+t)}/${fmt(it.qty)}`);amt+=t*it.price}});
+ const act=done/pj.totalPrice;$('#abar').style.width=Math.min(100,act*100)+'%';$('#atxt').textContent=(act*100).toFixed(2)+'%';
+ const day=dayNo(S.date);const plan=Math.max(0,Math.min(1,day/pj.days));
+ $('#pbar').style.width=plan*100+'%';$('#ptxt').textContent=(plan*100).toFixed(2)+'%';
+ $('#daychip').textContent=day<1?'尚未開工':`第 ${day} 天 · 剩 ${Math.max(0,pj.days-day)} 天`;
+ lockUI();
+ const wl=P.workers.filter(n=>S.work&&S.w[n]).map(n=>`${n} ${S.w[n]}`).join('、')||'無';
+ const head=`填報日期：${roc(S.date)}\n本日天氣：上午 ${S.am}／下午 ${S.pm}\n`;
+ $('#preview').textContent=S.work?`${head}出工人數：${wl}（合計 ${wt} 人）\n施工項目：\n${lines.join('\n')||'  本日無施工數量'}\n本日完成金額：約 ${Math.round(amt).toLocaleString()} 元\n重要事項：${S.notes||'無'}`:`${head}本日無施工－${S.reason}\n出工人數：0 人\n施工項目：本日無施工數量\n重要事項：${S.notes||'無'}`;
+ $('#sum').innerHTML=S.work?`<b>${roc(S.date)}</b> · ${S.am}/${S.pm} · <b>${wt}</b> 人 · 工項 <b>${lines.length}</b> 筆`:`<b>${roc(S.date)}</b> · ${S.am}/${S.pm} · <b>無施工</b>（${S.reason}）`;
+ if(!skipGroups)buildGroups();
+}
+function render(){const pj=P.project;
+ $('#pOrg').textContent=`${pj.org} · ${pj.contractor}`;$('#pName').textContent=pj.name;
+ $('#pMeta').innerHTML=`<span>開工 <b class="num">${roc(pj.start)}</b></span><span>預定完工 <b class="num">${roc(addDays(pj.start,pj.days-1))}</b></span><span>工期 <b class="num">${pj.days}</b> 日曆天</span>`;
+ $('#d').value=S.date;$('#notes').value=S.notes;buildWork();buildWeather();buildWorkers();refresh();status()}
+
+/* ---------- save ---------- */
+async function save(){
+ const rec=snap();const btn=$('#save');btn.disabled=true;btn.textContent='儲存中…';
+ try{
+  P.records[S.date]=rec;
+  try{const r=await writeFile(FILE,P,SHA,`施工日誌 ${S.date}`);SHA=r.content.sha}
+  catch(e){if(e.status!==409&&e.status!==422)throw e;
+   // 別台裝置剛存過：重新讀取後只蓋這一天
+   const fresh=await readFile(FILE);P=fresh.data;P.records[S.date]=rec;const r=await writeFile(FILE,P,fresh.sha,`施工日誌 ${S.date}`);SHA=r.content.sha}
+  DIRTY=false;status();toast(`${roc(S.date)} 已儲存`);return true
+ }catch(e){toast('儲存失敗：'+errText(e));return false}
+ finally{btn.disabled=false;btn.textContent='儲存'}
+}
+
+/* ---------- Excel ---------- */
+function daySheet(d,rec){
+ const pj=P.project;const day=dayNo(d);const plan=Math.max(0,Math.min(1,day/pj.days));const pct=x=>(x*100).toFixed(2)+'%';
+ const work=rec?rec.work!==false:null;const known=rec||d>pj.baseDate;
+ let done=0;items().forEach(it=>{done+=(priorDone(it,d)+recQ(rec,it.code))*it.price});
+ const A=[],M=[];const row=(...c)=>{A.push(c);return A.length-1};const merge=(r,c1,c2)=>M.push({s:{r,c:c1},e:{r,c:c2}});
+ merge(row(pj.org),0,5);merge(row('公共工程施工日誌'),0,5);
+ row('填報日期',roc(d),'本日天氣','上午：'+(rec?rec.am:''),'下午：'+(rec?rec.pm:''),'');
+ merge(row('工程名稱',pj.name,'','','',''),1,5);merge(row('承攬廠商',pj.contractor,'','','',''),1,5);
+ row('核定工期',pj.days+' 日曆天','累計工期',day+' 天','剩餘工期',Math.max(0,pj.days-day)+' 天');
+ row('開工日期',roc(pj.start),'完工日期',roc(addDays(pj.start,pj.days-1)),'','');
+ row('預定進度',pct(plan),'實際進度',known?pct(done/pj.totalPrice):'','','');
+ merge(row('本日是否施工',work===null?'未填報':work?'有':'沒有（'+rec.reason+'）','','','',''),1,5);
+ row('');merge(row('一、依施工計畫書執行按圖施工概況（含約定之重要施工項目及完成數量等）：'),0,5);
+ row('項次','施工項目','單位','契約數量','本日完成數量','累計完成數量');
+ P.groups.forEach(g=>{merge(row(g.id,g.name,'','','',''),1,5);
+  g.items.forEach(it=>{const t=recQ(rec,it.code);row(it.code,it.name,it.unit,it.qty,rec?t:'',known?+(priorDone(it,d)+t).toFixed(3):'')})});
+ row('');merge(row('三、工地人員及機具管理（含約定之出工人數及機具使用情形及數量）：'),0,5);
+ row('工別','本日人數','','','','');
+ P.workers.forEach(n=>row(n,rec?(work?(rec.w[n]||0):0):'','','','',''));
+ row('合計',rec?(work?P.workers.reduce((a,n)=>a+(rec.w[n]||0),0):0):'','','','','');
+ row('');merge(row('八、重要事項紀錄：'),0,5);
+ merge(row(!rec?'':work?(rec.notes||'無'):('本日無施工-'+rec.reason+(rec.notes?'；'+rec.notes:''))),0,5);
+ const ws=XLSX.utils.aoa_to_sheet(A);ws['!merges']=M;ws['!cols']=[{wch:12},{wch:40},{wch:8},{wch:12},{wch:14},{wch:14}];return ws}
+function buildWorkbook(){
+ const pj=P.project;const R=P.records;const W=P.workers;
+ const last=Object.keys(R).sort().pop()||S.date;
+ const dates=[];for(let d=pj.start;d<=last;d=addDays(d,1))dates.push(d);
+ const wb=XLSX.utils.book_new();
+ const H=[['填報日期','第幾天','本日是否施工','無施工原因','上午天氣','下午天氣',...W,'出工合計','填報工項數','重要事項']];
+ dates.forEach((d,i)=>{const r=R[d];if(!r){H.push([roc(d),i+1,'未填報']);return}const wk=r.work!==false;
+  H.push([roc(d),i+1,wk?'有':'沒有',wk?'':r.reason,r.am,r.pm,...W.map(n=>wk?(r.w[n]||0):0),wk?W.reduce((a,n)=>a+(r.w[n]||0),0):0,items().filter(it=>recQ(r,it.code)).length,r.notes||''])});
+ const wh=XLSX.utils.aoa_to_sheet(H);wh['!cols']=[{wch:11},{wch:7},{wch:12},{wch:10},{wch:8},{wch:8},...W.map(()=>({wch:7})),{wch:8},{wch:10},{wch:40}];
+ XLSX.utils.book_append_sheet(wb,wh,'每日彙總');
+ const T=[['項次','施工項目','單位','契約數量','單價',...dates.map(roc),'累計完成數量','完成比例','累計金額']];
+ P.groups.forEach(g=>{T.push([g.id,g.name]);g.items.forEach(it=>{const cum=+(priorDone(it,last)+recQ(R[last],it.code)).toFixed(3);
+  T.push([it.code,it.name,it.unit,it.qty,it.price,...dates.map(d=>R[d]?recQ(R[d],it.code):''),cum,(cum/it.qty*100).toFixed(1)+'%',Math.round(cum*it.price)])})});
+ const wt=XLSX.utils.aoa_to_sheet(T);wt['!cols']=[{wch:10},{wch:36},{wch:6},{wch:9},{wch:9},...dates.map(()=>({wch:9})),{wch:12},{wch:9},{wch:12}];
+ XLSX.utils.book_append_sheet(wb,wt,'工項逐日數量');
+ dates.forEach(d=>XLSX.utils.book_append_sheet(wb,daySheet(d,R[d]||null),roc(d)));
+ return{wb,last};
+}
+$('#xls').onclick=async()=>{
+ if(typeof XLSX==='undefined'){toast('Excel 元件還沒載入，請稍候再按');return}
+ if(DIRTY&&!(await save()))return;
+ const{wb,last}=buildWorkbook();XLSX.writeFile(wb,`${P.project.short||P.project.id}_施工日誌_${roc(P.project.start)}-${roc(last)}.xlsx`);toast('已匯出 Excel');
+};
+
+/* ---------- boot ---------- */
+$('#d').onchange=e=>{if(!e.target.value)return;S.date=e.target.value;loadDay();render()};
+$('#notes').oninput=e=>{S.notes=e.target.value;markDirty();refresh(true)};
+$('#save').onclick=save;
+$('#openSet').onclick=()=>{$('#setup').hidden=!$('#setup').hidden;if(CFG){$('#cfOwner').value=CFG.owner;$('#cfRepo').value=CFG.repo;$('#cfToken').value=CFG.token}};
+$('#cfSave').onclick=async()=>{CFG={owner:$('#cfOwner').value.trim(),repo:$('#cfRepo').value.trim(),token:$('#cfToken').value.trim()};const ok=await start();if(ok)ls.set('sd:cfg',JSON.stringify(CFG))};
+$('#proj').onchange=e=>openProject(e.target.value);
+window.addEventListener('beforeunload',e=>{if(DIRTY){e.preventDefault();e.returnValue=''}});
+async function openProject(f){
+ try{const r=await readFile(f);P=r.data;SHA=r.sha;FILE=f;ls.set('sd:proj',f);P.records=P.records||{};
+  S.date=S.date||todayStr();loadDay();$('#main').hidden=false;$('#savebar').hidden=false;render();return true}
+ catch(e){$('#setErr').hidden=false;$('#setErr').textContent=errText(e);$('#setup').hidden=false;return false}
+}
+async function start(){
+ $('#setErr').hidden=true;
+ try{
+  const list=(await gh('')).filter(x=>x.type==='file'&&x.name.endsWith('.json'));
+  if(!list.length){$('#setErr').hidden=false;$('#setErr').textContent='資料 repo 裡沒有 .json 案場檔';$('#setup').hidden=false;return false}
+  const sel=$('#proj');sel.innerHTML='';
+  for(const f of list){const o=document.createElement('option');o.value=f.name;o.textContent=f.name.replace(/\.json$/,'');sel.appendChild(o)}
+  const want=ls.get('sd:proj');const f=list.some(x=>x.name===want)?want:list[0].name;sel.value=f;
+  const ok=await openProject(f);if(ok)$('#setup').hidden=true;
+  // 下拉選單顯示案場簡稱
+  [...sel.options].forEach(async o=>{if(o.value===f){o.textContent=P.project.short||o.textContent}else{try{const r=await readFile(o.value);o.textContent=r.data.project.short||o.textContent}catch(e){}}});
+  return ok;
+ }catch(e){$('#setErr').hidden=false;$('#setErr').textContent=errText(e);$('#setup').hidden=false;return false}
+}
+if(CFG&&CFG.token)start();else $('#setup').hidden=false;
+</script>
+</body>
+</html>
